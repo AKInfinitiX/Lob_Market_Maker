@@ -26,16 +26,13 @@ This is a research/learning project, not a production trading system.
 ## What this project does NOT do (important limitations)
 
 - **No real market data.** All price paths and order flow are synthetic
-  (Brownian motion + random jumps + a hand-tuned Poisson fill model).
-  Nothing here is backtested against actual exchange data.
+  (Brownian motion + random jumps).
 - **No real order book depth.** The book is cleared every timestep and
   only ever holds the market maker's own bid/ask plus at most one
   counterparty order per side — there are no other participants, no
   multiple price levels, and no queue position.
 - **Fixed order size.** Every order is exactly 1 unit; there are no
   partial fills or variable trade sizes from other participants.
-- **No latency modeling.** Real market-making PnL is heavily driven by
-  latency and quote staleness, which is not simulated here.
 - **Uncalibrated constants.** Parameters such as the informed-trader
   probability/duration/intensity, price impact per fill, and jump size
   were chosen to be directionally reasonable, not fit to real data.
