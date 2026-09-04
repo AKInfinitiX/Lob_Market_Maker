@@ -23,16 +23,47 @@ This is a research/learning project, not a production trading system.
   report the distribution of final PnL, Sharpe ratio, and max drawdown
   rather than a single simulation run.
 
+## Real market data mode
+
+`real_data_demo.py` fetches real historical BTCUSDT 1-minute candles from
+Binance's public REST API (no key required), estimates volatility (sigma)
+directly from real log returns, and replays the real price path through
+the *same* Avellaneda-Stoikov market maker and order book -- nothing
+about the strategy or matching engine changes.
+
+```bash
+python3 real_data_demo.py
+```
+
+This does **not** require new math: the AS reservation-price/spread
+formulas are identical, and the extra data-side work is just standard
+deviation of log returns. It's mostly plumbing (fetch → clean → feed into
+the existing simulation loop), isolated in `data_loader.py` so the core
+`market_maker.py` / `orderbook.py` logic stays untouched.
+
+**Caveat that matters:** `gamma` and `k` in `main.py` / `monte_carlo.py`
+were chosen for the synthetic toy time-scale (`dt=0.005`), not fit to real
+1-minute bar data. `real_data_demo.py` re-estimates `sigma` from real data
+but reuses the same `gamma`/`k` defaults, so treat its output as "the same
+strategy logic plugged into real prices," not a fully recalibrated
+production model. Proper recalibration of `gamma`/`k` against real spread
+and order-flow data is the natural next step (see below).
+
 ## What this project does NOT do (important limitations)
 
-- **No real market data.** All price paths and order flow are synthetic
-  (Brownian motion + random jumps).
+- **Order flow is still synthetic even in real-data mode.** Real-data mode
+  replaces the *price* path with real data, but fills are still generated
+  by the same probabilistic arrival model as the synthetic mode, since
+  Binance's public klines endpoint gives OHLCV candles, not individual
+  order-level data.
 - **No real order book depth.** The book is cleared every timestep and
   only ever holds the market maker's own bid/ask plus at most one
   counterparty order per side — there are no other participants, no
   multiple price levels, and no queue position.
 - **Fixed order size.** Every order is exactly 1 unit; there are no
   partial fills or variable trade sizes from other participants.
+- **No latency modeling.** Real market-making PnL is heavily driven by
+  latency and quote staleness, which is not simulated here.
 - **Uncalibrated constants.** Parameters such as the informed-trader
   probability/duration/intensity, price impact per fill, and jump size
   were chosen to be directionally reasonable, not fit to real data.
@@ -54,8 +85,10 @@ real limit order book, not a faithful replica of one.
 ├── orderbook.py        # Price-time-priority matching engine (heap-based)
 ├── market_maker.py      # Avellaneda-Stoikov reservation price & spread
 ├── simulation.py         # Price process, order flow, PnL/risk tracking
-├── main.py                 # Single simulation run + plot
+├── main.py                 # Single simulation run (synthetic price) + plot
 ├── monte_carlo.py          # 300-trial Monte Carlo sweep + plots + CSV
+├── data_loader.py           # Fetches real price data (Binance API) & estimates volatility
+├── real_data_demo.py        # Runs the market maker against real historical price data
 ├── requirements.txt
 └── README.md
 ```
@@ -118,13 +151,17 @@ seed or parameter set.
 
 ## Suggested next steps
 
-- Replace the synthetic price process with real historical tick or
-  candle data (e.g., a public LOBSTER sample or exchange API data) and
-  compare Monte Carlo statistics against the synthetic baseline.
+- Recalibrate `gamma` and `k` specifically against real spread/volume
+  data for the chosen symbol and bar frequency (currently only `sigma`
+  is estimated from real data; `gamma`/`k` still use the synthetic-mode
+  defaults).
+- Run `real_data_demo.py` across multiple symbols/time windows and
+  compare PnL/Sharpe distributions the way `monte_carlo.py` does for the
+  synthetic mode.
 - Add real order book depth with multiple simulated participants instead
   of clearing the book every tick.
-- Fit `gamma`, `k`, and the informed-flow parameters to real spread and
-  order-flow data instead of using fixed constants.
+- Fit the informed-flow parameters to real order-flow data instead of
+  using fixed constants.
 
 ## References
 
