@@ -89,8 +89,11 @@ class MarketSimulation:
         return shock
 
     def _post_mm_quotes(self, bid_price: float, ask_price: float, t: float):
-        self.book.add_order(Order(next_order_id(), True, bid_price, 1, t))
-        self.book.add_order(Order(next_order_id(), False, ask_price, 1, t))
+        mm_bid_id = next_order_id()
+        mm_ask_id = next_order_id()
+        self.book.add_order(Order(mm_bid_id, True, bid_price, 1, t))
+        self.book.add_order(Order(mm_ask_id, False, ask_price, 1, t))
+        return mm_bid_id, mm_ask_id
 
     def _maybe_send_counterparty_orders(self, bid_price: float, ask_price: float, t: float):
         delta_b = max(0.0, self.mid_price - bid_price)
@@ -105,9 +108,17 @@ class MarketSimulation:
         elif self.informed_direction == 1:
             lambda_a *= self.informed_intensity_multiplier
 
-        if random.random() < lambda_b * self.dt:
+        # lambda * dt is a Poisson-process probability and must stay in [0, 1].
+        # With large dt (e.g. real-data replay at dt=1.0) the raw value can
+        # exceed 1, which would make an "arrival" deterministic rather than
+        # probabilistic -- clip it so the fill model stays meaningful at any
+        # timestep size.
+        p_b = min(1.0, lambda_b * self.dt)
+        p_a = min(1.0, lambda_a * self.dt)
+
+        if random.random() < p_b:
             self.book.add_order(Order(next_order_id(), False, bid_price, 1, t))
-        if random.random() < lambda_a * self.dt:
+        if random.random() < p_a:
             self.book.add_order(Order(next_order_id(), True, ask_price, 1, t))
 
     def simulate_market_orders(self, bid_price: float, ask_price: float, t: float) -> float:
@@ -126,18 +137,24 @@ class MarketSimulation:
             self.inventory_held_steps = 0
 
         self.book.clear()
-        self._post_mm_quotes(bid_price, ask_price, t)
+        mm_bid_id, mm_ask_id = self._post_mm_quotes(bid_price, ask_price, t)
         self._maybe_send_counterparty_orders(bid_price, ask_price, t)
 
         trades = self.book.match_orders()
         impact = 0.0
         for bid_id, ask_id, exec_price, qty in trades:
-            if abs(exec_price - bid_price) < 1e-9:
+            # Attribute a fill to the market maker only if one of ITS OWN
+            # order ids was actually party to the trade -- not just because
+            # the execution price happens to coincide with the MM's quote.
+            # (Two counterparty orders can otherwise cross each other at a
+            # price that matches the MM's bid/ask by coincidence, which was
+            # previously mis-credited to the MM.)
+            if bid_id == mm_bid_id:
                 self.inventory += qty
                 self.cash -= (exec_price + self.fee_per_trade) * qty
                 if self.informed_direction == -1:
                     impact -= self.price_impact_per_fill * qty
-            elif abs(exec_price - ask_price) < 1e-9:
+            elif ask_id == mm_ask_id:
                 self.inventory -= qty
                 self.cash += (exec_price - self.fee_per_trade) * qty
                 if self.informed_direction == 1:
