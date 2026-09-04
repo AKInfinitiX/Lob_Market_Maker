@@ -40,11 +40,32 @@ def fetch_binance_klines(symbol: str = "BTCUSDT", interval: str = "1m",
 def estimate_bar_volatility(df: pd.DataFrame) -> float:
     """
     Standard deviation of log returns, bar-to-bar (not annualized).
-    This is the real-data estimate that plugs into the AS model's sigma
-    when dt is set to represent one bar (see build_price_path docstring).
     """
     log_returns = np.log(df["close"] / df["close"].shift(1)).dropna()
     return float(log_returns.std())
+
+
+def estimate_scaled_sigma(df: pd.DataFrame, initial_price: float, dt: float) -> float:
+    """
+    Convert a real bar-to-bar log-return volatility into the sigma units
+    the Avellaneda-Stoikov model expects, GIVEN a specific internal dt.
+
+    This matters because arrival_base_intensity and k in simulation.py
+    were tuned together with sigma=2.0 at dt=0.005 (the synthetic-mode
+    defaults) -- naively reusing those same constants at a very different
+    dt (e.g. dt=1.0 for "one real bar") makes the fill-probability model
+    produce nonsensical results (arrivals become certain every tick).
+
+    Keeping dt at the same small scale as the synthetic mode and instead
+    rescaling sigma to match keeps gamma/k/arrival_base_intensity valid
+    without needing to re-tune them from scratch.
+
+    sigma_AS such that sigma_AS * sqrt(dt) ~= observed price step std,
+    after rescaling the real series to start at `initial_price`.
+    """
+    bar_sigma = estimate_bar_volatility(df)          # std of log returns, per bar
+    price_step_std = initial_price * bar_sigma        # approx price-unit std at target scale
+    return price_step_std / np.sqrt(dt)
 
 
 def build_price_path(df: pd.DataFrame, initial_price: float = 100.0) -> np.ndarray:
