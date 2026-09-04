@@ -109,9 +109,9 @@ you can see what the simulator produces without running it yourself:
 
 | File | Description |
 |---|---|
-| [`results/simulation_plot.png`](./simulation_plot.png) | Single run: mid-price with MM bid/ask overlay, inventory over time, and cumulative PnL |
-| [`results/monte_carlo_results.png`](./monte_carlo_results.png) | 300-trial distributions of final PnL, max drawdown, Sharpe ratio, and PnL vs. max inventory held |
-| [`results/monte_carlo_results.csv`](./monte_carlo_results.csv) | Raw per-trial data (seed, final PnL, Sharpe, drawdown, max inventory) behind the plot above |
+| [`results/simulation_plot.png`](./results/simulation_plot.png) | Single run: mid-price with MM bid/ask overlay, inventory over time, and cumulative PnL |
+| [`results/monte_carlo_results.png`](./results/monte_carlo_results.png) | 300-trial distributions of final PnL, max drawdown, Sharpe ratio, and PnL vs. max inventory held |
+| [`results/monte_carlo_results.csv`](./results/monte_carlo_results.csv) | Raw per-trial data (seed, final PnL, Sharpe, drawdown, max inventory) behind the plot above |
 
 These confirm the strategy is a small-edge, fat-tailed one rather than
 "free money" — roughly 40% of the 300 runs end with negative final PnL
