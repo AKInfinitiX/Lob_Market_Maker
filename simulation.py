@@ -1,7 +1,7 @@
 import random
 import numpy as np
 import pandas as pd
-from typing import List, Dict
+from typing import List, Dict, Optional
 from market_maker import AvellanedaStoikovMarketMaker
 from orderbook import OrderBook, Order, next_order_id
 
@@ -14,10 +14,27 @@ class MarketSimulation:
                  informed_max_duration: int = 15,
                  informed_intensity_multiplier: float = 2.5,
                  price_impact_per_fill: float = 0.02,
-                 seed: int = None):
+                 seed: int = None,
+                 price_path: Optional[np.ndarray] = None):
+        """
+        price_path: optional 1D array of real historical mid-prices to replay
+        instead of generating a synthetic Brownian-motion price. Each array
+        element is treated as one simulation step (spaced `dt` apart), so
+        T is overridden to match len(price_path). The market maker's own
+        quoting logic, the order book, and order-flow model are unchanged --
+        only the source of the public mid-price differs.
+        """
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed)
+
+        self.price_path = None
+        if price_path is not None:
+            self.price_path = np.asarray(price_path, dtype=float)
+            if len(self.price_path) < 2:
+                raise ValueError("price_path must contain at least 2 points")
+            initial_price = float(self.price_path[0])
+            T = (len(self.price_path) - 1) * dt  # keep horizon consistent with data length
 
         self.mid_price = initial_price
         self.T = T
@@ -146,7 +163,9 @@ class MarketSimulation:
         }
 
     def run(self) -> pd.DataFrame:
-        steps = int(self.T / self.dt)
+        using_real_data = self.price_path is not None
+        steps = (len(self.price_path) - 1) if using_real_data else int(self.T / self.dt)
+
         for step in range(steps):
             t = step * self.dt
             self._update_informed_regime()
@@ -155,7 +174,6 @@ class MarketSimulation:
             bid_price, ask_price = self.market_maker.get_quotes(current_mid, self.inventory, t)
 
             impact = self.simulate_market_orders(bid_price, ask_price, t)
-            public_shock = self.simulate_public_price_step()
 
             pnl = self.cash + (self.inventory * current_mid)
 
@@ -168,7 +186,14 @@ class MarketSimulation:
                 'pnl': pnl
             })
 
-            self.mid_price = current_mid + impact + public_shock
+            if using_real_data:
+                # Real data already contains true price dynamics; the
+                # market maker's own fills still apply a small extra
+                # impact on top of it, same as in the synthetic mode.
+                self.mid_price = float(self.price_path[step + 1]) + impact
+            else:
+                public_shock = self.simulate_public_price_step()
+                self.mid_price = current_mid + impact + public_shock
 
             if self.informed_remaining > 0:
                 self.informed_remaining -= 1
