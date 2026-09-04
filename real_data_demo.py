@@ -8,7 +8,7 @@ estimates sigma from real data instead of guessing it.
 """
 import matplotlib.pyplot as plt
 from simulation import MarketSimulation
-from data_loader import fetch_binance_klines, estimate_bar_volatility, build_price_path
+from data_loader import fetch_binance_klines, estimate_scaled_sigma, build_price_path
 
 
 def main():
@@ -16,24 +16,25 @@ def main():
     df = fetch_binance_klines(symbol="BTCUSDT", interval="1m", limit=1000)
     print(f"Downloaded {len(df)} real 1-minute candles for BTCUSDT.")
 
-    # Estimate sigma directly from real data instead of guessing it.
-    sigma_est = estimate_bar_volatility(df)
-    print(f"Estimated bar-to-bar volatility from real data: {sigma_est:.6f}")
+    initial_price = 100.0
+    dt = 0.005  # match the synthetic mode's internal time scale -- see
+                # estimate_scaled_sigma() docstring for why this matters.
+
+    # Estimate sigma directly from real data, rescaled into the same units
+    # gamma/k/arrival_base_intensity were tuned against in simulation.py.
+    sigma_scaled = estimate_scaled_sigma(df, initial_price, dt)
+    print(f"Scaled sigma for the AS model (dt={dt}): {sigma_scaled:.4f}")
 
     # Rescale the real price series to start at 100 so it's easy to compare
     # against the synthetic simulation's usual starting point -- the real
     # percentage moves are preserved exactly, only the starting level changes.
-    price_path = build_price_path(df, initial_price=100.0)
+    price_path = build_price_path(df, initial_price=initial_price)
 
-    # dt=1.0 here represents "one real bar" (one minute), not the toy
-    # dt=0.005 used in main.py's synthetic simulation. gamma/k were tuned
-    # for the synthetic scale in main.py and have NOT been re-fit for real
-    # 1-minute BTC data -- see README for why that recalibration matters.
     sim = MarketSimulation(
-        initial_price=100.0,
+        initial_price=initial_price,
         T=1.0,          # overridden internally to match price_path length
-        dt=1.0,
-        sigma=sigma_est,
+        dt=dt,
+        sigma=sigma_scaled,
         price_path=price_path,
         seed=42
     )
